@@ -158,7 +158,7 @@ t(offspring_sl) %>% data.frame() %>% cbind(., offspring_sl_BV$BV) %>%
 t(offspring) %>% data.frame() %>% cbind(., Offspring_BV$BV) %>%
   rename(BV = 'Offspring_BV$BV') %>%
   lm(BV ~ . , data = .)
-# works well everything was one remember
+# works well everything had an effect size of 1
 
 # How about about normally distributed markers?
 randeffect.lm = t(offspring) %>% data.frame() %>% cbind(., Offspring_Randef_BV$BV) %>%
@@ -170,12 +170,12 @@ Random_MarkerEffect %>% cbind(data.frame(randeffect.lm$coefficients)[-1,]) %>% c
 # that we are estimating. ie N > P by 5x
 
 #now lets get more realistic
-P4000_N500 = GenerateBiparental(NumLoci = 4000,PopulationSize = 500, MarkerEffects = rnorm(4000,mean = 0, sd = 1))
+P4000_N500 = GenerateBiparental(NumLoci = 1000,PopulationSize = 400, MarkerEffects = rnorm(1000,mean = 0, sd = 1))
 P4000_N500$Plot
 P4k_N500.lm = t(P4000_N500$Offspring) %>% data.frame() %>%cbind(., P4000_N500$Offspring_BV) %>%
   lm(BV~.,data = .)
 P4000_N500$MarkerEffects %>% cbind(data.frame(P4k_N500.lm$coefficients)[-1,]) %>% cor(., use = 'complete.obs')
-# No correlation between estimated effects and actual known effect!
+# Low or No correlation between estimated effects and actual known effect!
 MarkerCoef4k_n500= as.data.frame(P4k_N500.lm$coefficients) #let get out the coef
 MarkerCoef4k_n500[is.na(MarkerCoef4k_n500)] <- 0 #replace nas with 0s so that things can be calcuated  - notice there are 499 of them 
 cor(P4000_N500$ExtraOffspring_BV$BV,#TrueValues
@@ -187,32 +187,15 @@ cor(P4000_N500$ExtraOffspring_BV$BV,#TrueValues
 Ueffects = mixed.solve(y = P4000_N500$Offspring_BV$BV, Z = t(P4000_N500$Offspring))
 #Now lets check to see if these marker effects along with the extra offspring simulated and there true breeding values are correlated
 cor(t(as.matrix(P4000_N500$ExtraOffspring)) %*% as.matrix(Ueffects$u),P4000_N500$ExtraOffspring_BV$BV)
-#~0.5 which is pretty dang good. 
+ 
 # Lets look at the Markers now and the estimated vs actual effects:
 data.frame(Estimated = as.matrix(Ueffects$u), Known =P4000_N500$MarkerEffects) %>%
-  ggplot(aes(x = Known, y = Estimated))+geom_point() #Markers that are monomorphis get estimate effect sizes of zero hence those at zero
+  ggplot(aes(x = Known, y = Estimated))+geom_point() #Markers that are monomorphic get estimate effect sizes of zero hence those at zero
 
 
-
-numP = 15
-x = rnorm(numP, sd = 4)
-y = rnorm(numP,mean = x)
-lm(y~x)
-data.frame(resid = y,my = mean(y),x=x) %>% mutate(point = 1:numP) %>% pivot_longer(cols =c(resid,my)) %>%
-  ggplot()+geom_line(aes(x = x, y = value, group =point))+geom_point(data = data.frame(x = x,y=y), aes(x=x,y=y))+
-  geom_hline(yintercept = mean(y))
-  
-data.frame(resid = y-(.5*x+mean(y)),my = .5*x+mean(y),x=x) %>% mutate(point = 1:numP) %>% pivot_longer(cols =c(resid,my)) %>%
-  ggplot()+geom_line(aes(x = x, y = value, group =point))+geom_point(data = data.frame(x = x,y=y), aes(x=x,y=y))+
-  geom_abline(slope = .5 )
-
-
-
-
-
-
-#########################################################################################
+####################### Actual GP #########
 setwd('WMB_Data/')
+load('WinterGD.RData')
 DHs = rbind(read_excel("DHtp1_all.xlsx")%>%mutate(TP = 'TP1',PM_date =5),
             read_excel("DHtp2_all.xlsx")%>%mutate(TP = 'TP2',PM_date =19),
             read_excel("DHtp3_all.xlsx")%>%mutate(TP = 'TP3',PM_date =47),
@@ -233,7 +216,9 @@ DHs = rbind(read_excel("DHtp1_all.xlsx")%>%mutate(TP = 'TP1',PM_date =5),
                                           "Check 4-SY Tepee","Check 5-Wintmalt","Check 6-Charles"),
                            to = c('Flavia', 'Scala','DH130910','DH130910','SY Tepee','Wintmalt','Charles')))
 setwd(rprojroot::find_rstudio_root_file())
-load('SMB_Data/PHS_BLUEs_GGS1920.RData')
+WinterGD[1:4,1:4]
+dim(WinterGD)
+# This data is set up with all this location and so need to be summarized into sinlge trait values per line
 
 Model_get_blups_H2 = function(trait.lm, trait){
   # This function fits trait~Year+(1|taxa)+Location+rep using lmer()
@@ -307,6 +292,94 @@ DH_blups = DH_blups %>% separate(remove = F, col = trait,into = c('Trait','TP'))
                             to = c('Flavia/DH130910','Scala/DH130910',
                                    'SY Tepee/DH130910','DH130910/Wintmalt',
                                    'Parent','Parent','Parent','Parent','Parent')))
+
+
+## Basis:
+Phenotype = DH_blues %>% filter(TP == 'TP2' & Trait == 'GI')%>% arrange(taxa) %>% filter(taxa %in% WinterGD$taxa)
+myGD = WinterGD %>% filter(taxa %in% Phenotype$taxa) %>% arrange(taxa) 
+dim(Phenotype);dim(myGD)
+if(!length(unique(Phenotype$taxa))==sum(Phenotype$taxa == myGD$taxa)){
+  print('taxa lists are not correctly aligning')
+}
+# 80/20 training and testing split
+TrueandPredicted = data.frame()
+datasplit = 0.8
+Training_size = round(datasplit*dim(Phenotype)[1],0)
+
+set.seed(1)
+Phenotype = as.vector(Phenotype$BLUE) #correct format for RRblup
+num_entries = length(Phenotype)
+myGD = myGD[,-1]-1 #correct format for RRblup
+trainingSet = sort(sample(1:num_entries,Training_size))
+testingSet = setdiff(1:num_entries,trainingSet)
+
+y_train = Phenotype[trainingSet] 
+y_test = Phenotype[testingSet]
+
+marker_train = myGD[trainingSet,]
+marker_test = myGD[testingSet,]
+
+trained.Model = mixed.solve(y_train, Z = marker_train, K = NULL, SE =FALSE)
+
+PredictedPheno = as.matrix(marker_test) %*% as.matrix(trained.Model$u)
+print(cor(y_test,PredictedPheno))
+
+
+# Now wrap it into a function
+FoldCVGPv2 = function(Phenotype, myGD, numfolds,datasplit, trait_name){
+  # Phenotype is full vector of phenotypes
+  # myGD is a n taxa x N markers dataframe with -1,0,1 coding and no 'taxa' column in it
+  # numfolds is the number of folds to cv (ie 5 for five-fold cv)
+  # datasplit is the percentage as a decimal for the training/testing split.
+  
+  Phenotype = Phenotype %>% filter(taxa %in% myGD$taxa) %>% arrange(taxa) 
+  myGD = myGD %>% filter(taxa %in% Phenotype$taxa) %>% arrange(taxa)
+  dim(Phenotype)
+  dim(myGD)
+  if(!length(unique(Phenotype$taxa))==sum(Phenotype$taxa == myGD$taxa)){
+    stop('taxa lists are not correctly aligning')
+  }
+  
+  TrueandPredicted = data.frame()
+  
+  Training_size = round(datasplit*num_entries,0)
+  start_time <- Sys.time() 
+  set.seed(1)
+  Phenotype = as.vector(Phenotype$BLUE)
+  num_entries = length(Phenotype)
+  myGD = myGD[,-1]-1
+  for (i in 1:numfolds){
+    
+    trainingSet = sort(sample(1:num_entries,Training_size))
+    testingSet = setdiff(1:num_entries,trainingSet)
+    
+    y_train = Phenotype[trainingSet] 
+    y_test = Phenotype[testingSet]
+    
+    marker_train = myGD[trainingSet,]
+    marker_test = myGD[testingSet,]
+    
+    trained.Model = mixed.solve(y_train, Z = marker_train, K = NULL, SE =FALSE)
+    
+    PredictedPheno = as.matrix(marker_test) %*% as.matrix(trained.Model$u)
+    print(cor(y_test,PredictedPheno))
+    
+    TrueandPredicted = rbind(TrueandPredicted, 
+                             data.frame(TruePheno = y_test,
+                                        PredPheno = PredictedPheno,
+                                        fold = i,
+                                        trait = trait_name,
+                                        correlation = cor(y_test,PredictedPheno)))
+  }
+  end_time <- Sys.time()
+  print(end_time-start_time)
+  return(TrueandPredicted)
+}
+
+
+
+##################Random Plots made for the presentation #######################################################################
+load('SMB_Data/PHS_BLUEs_GGS1920.RData')
 
 
 DH_blues %>% filter(TP == 'TP5' & Trait == 'GI' & Family !='Parent') %>% filter(taxa != 'Charles') %>% 
