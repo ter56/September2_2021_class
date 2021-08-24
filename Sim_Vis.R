@@ -44,7 +44,7 @@ offspring_sl_BV %>% ggplot(aes(x =BV)) +geom_histogram(bins = 6)+labs(title = '5
 
 # Now lets see what happens with effect sizes that differ
 # lets create a vector of marker allele substitution effects
-DifMarkerEffects_sl = c(1,6,2,1,1)
+DifMarkerEffects_sl = c(1,60,2,1,1)
 # Same thing as above - play with changing the effect sizes and see what happens
 offspring_SLD_BV = data.frame(BV = t(t(DifMarkerEffects_sl)%*%offspring_sl ))
 Parents_SLD_BV = data.frame(BV = t(t(DifMarkerEffects_sl)%*%Parents_sl ))
@@ -108,10 +108,13 @@ Offspring_Randef_BV %>% ggplot(aes(x = BV))+geom_density()+geom_vline(xintercept
              aes(x =x, y = y, label = label))
 
 
+###  Back to the presenation! #####
+
 x = sample(c(1,0),100,replace = T)
 y = rnorm(mean = x*6, sd=1, n = 100)
 data.frame(x = x,y=y) %>% ggplot(aes(x =x, y =y))+geom_point() +xlab('Marker Score')+
   ylab('Breeding Value') +geom_smooth(formula = y~x, se = F, method = lm)
+
 
 
 
@@ -191,6 +194,12 @@ cor(t(as.matrix(P4000_N500$ExtraOffspring)) %*% as.matrix(Ueffects$u),P4000_N500
 # Lets look at the Markers now and the estimated vs actual effects:
 data.frame(Estimated = as.matrix(Ueffects$u), Known =P4000_N500$MarkerEffects) %>%
   ggplot(aes(x = Known, y = Estimated))+geom_point() #Markers that are monomorphic get estimate effect sizes of zero hence those at zero
+
+
+
+
+
+
 
 
 ####################### Actual GP #########
@@ -327,10 +336,12 @@ print(cor(y_test,PredictedPheno))
 
 # Now wrap it into a function
 FoldCVGPv2 = function(Phenotype, myGD, numfolds,datasplit, trait_name){
-  # Phenotype is full vector of phenotypes
+  # Phenotype is full vector of phenotypes as a dataframe with column names of 'taxa' 
+  # and 'BLUE'
   # myGD is a n taxa x N markers dataframe with -1,0,1 coding and no 'taxa' column in it
   # numfolds is the number of folds to cv (ie 5 for five-fold cv)
   # datasplit is the percentage as a decimal for the training/testing split.
+  # Trait name is a string of the desired name output.
   
   Phenotype = Phenotype %>% filter(taxa %in% myGD$taxa) %>% arrange(taxa) 
   myGD = myGD %>% filter(taxa %in% Phenotype$taxa) %>% arrange(taxa)
@@ -375,6 +386,13 @@ FoldCVGPv2 = function(Phenotype, myGD, numfolds,datasplit, trait_name){
   print(end_time-start_time)
   return(TrueandPredicted)
 }
+
+TP2_GI_Prediction = 
+  FoldCVGPv2(Phenotype = DH_blues %>% filter(TP == 'TP2' & Trait == 'GI')%>% arrange(taxa),
+             myGD = WinterGD,
+             numfolds = 5,
+             datasplit = .8,
+             trait_name = 'TP2_GI')
 
 
 
