@@ -193,8 +193,8 @@ cor(t(as.matrix(P4000_N500$ExtraOffspring)) %*% as.matrix(Ueffects$u),P4000_N500
  
 # Lets look at the Markers now and the estimated vs actual effects:
 data.frame(Estimated = as.matrix(Ueffects$u), Known =P4000_N500$MarkerEffects) %>%
-  ggplot(aes(x = Known, y = Estimated))+geom_point() #Markers that are monomorphic get estimate effect sizes of zero hence those at zero
-
+  ggplot(aes(x = Known, y = Estimated))+geom_point()+ #Markers that are monomorphic get estimate effect sizes of zero hence those at zero
+  geom_abline(slope = 1, intercept = 0)
 
 
 
@@ -338,7 +338,7 @@ print(cor(y_test,PredictedPheno))
 FoldCVGPv2 = function(Phenotype, myGD, numfolds,datasplit, trait_name){
   # Phenotype is full vector of phenotypes as a dataframe with column names of 'taxa' 
   # and 'BLUE'
-  # myGD is a n taxa x N markers dataframe with -1,0,1 coding and no 'taxa' column in it
+  # myGD is a n taxa x N markers dataframe with 0,1,2 coding and a 'taxa' column as the first column in it
   # numfolds is the number of folds to cv (ie 5 for five-fold cv)
   # datasplit is the percentage as a decimal for the training/testing split.
   # Trait name is a string of the desired name output.
@@ -372,7 +372,7 @@ FoldCVGPv2 = function(Phenotype, myGD, numfolds,datasplit, trait_name){
     
     trained.Model = mixed.solve(y_train, Z = marker_train, K = NULL, SE =FALSE)
     
-    PredictedPheno = as.matrix(marker_test) %*% as.matrix(trained.Model$u)
+    PredictedPheno = as.matrix(marker_test) %*% as.matrix(trained.Model$u)+as.numeric(trained.Model$beta)
     print(cor(y_test,PredictedPheno))
     
     TrueandPredicted = rbind(TrueandPredicted, 
@@ -394,11 +394,75 @@ TP2_GI_Prediction =
              datasplit = .8,
              trait_name = 'TP2_GI')
 
+TP2_GI_Prediction %>% ggplot(aes(x = TruePheno, y = PredPheno))+
+  geom_point()+geom_abline(slope = 1, intercept = 0, color = 'red')+
+  geom_smooth(method = 'lm')
 
+####Association analysis example using GAPIT #############
+load('SMB_Data/PHS_BLUEs_GGS1920.RData')
+load(file = 'SMB_Data/myGD_LDpruned_w_KASP.RData')
+load(file = 'SMB_Data/myGM_LDpruned_w_KASP.RData')
+
+DF_OperationsV2 = function(dataframe){
+  dataframe = dataframe[order(dataframe$P.value),]
+  dataframe$logPercentileQQplot = -log10(c(1:length(dataframe$SNP))/length(dataframe$SNP))
+  dataframe$rank = c(1:length(dataframe$SNP))
+  dataframe$FDRPval = length(dataframe$SNP)*dataframe$P.value/dataframe$rank
+  dataframe = dataframe[order(dataframe$Chromosome, as.numeric(dataframe$Position)),]
+  dataframe$log10PVal = -log10(dataframe$P.value)
+  dataframe$ordinal = c(1:length(dataframe$SNP))
+  return(dataframe)
+} #Operations to be performed on GAPIToutput$GWAS so that homeMadeManhattanLDPruned works
+TableOutput = function(GWAS.sum.dataframe, n = 20){
+  GWAS.sum.dataframe[order(GWAS.sum.dataframe$rank),c('SNP','Chromosome','Position','P.value','maf','FDRPval')][1:n,] %>% 
+    mutate(maf = as.numeric(as.character(maf))) %>%
+    kable(digits = c(0,1,0,8,2,6), align = 'lcccrr')}
+
+
+PHS.MLM.gwas = PHS.blues %>% GAPIT(Y = .,GD=myGD20_prune, GM=myGM20_prune,PCA.total = 2,
+                                   Geno.View.output=F, model="MLM", Major.allele.zero = F, file.output=F,SNP.MAF = 0.05)
+PHS.MLMM.gwas = PHS.blues %>% GAPIT(Y = .,GD=myGD20_prune, GM=myGM20_prune,PCA.total = 2,
+                                   Geno.View.output=F, model="MLMM", Major.allele.zero = F, file.output=F,SNP.MAF = 0.05)
+
+SNPperChr = table(PHS.MLM.gwas$GWAS$Chromosome)
+MiddleOfChr = SNPperChr/2
+breaks = c(); breaks[1]= MiddleOfChr[1];
+ChromLines = c();ChromLines[1] = SNPperChr[1]
+for(i in 2:length(SNPperChr)){
+  breaks[i] = sum(SNPperChr[1:i-1])+MiddleOfChr[i]
+  ChromLines[i] = sum(SNPperChr[1:i])
+}
+
+
+DF_OperationsV2(PHS.MLM.gwas$GWAS) %>% filter(maf >0.07) %>%
+  ggplot(aes(x = ordinal, y = log10PVal))+
+  geom_point(size =2.5) +
+  geom_vline(xintercept = ChromLines)+
+  geom_vline(xintercept = c(9228,10771), color = 'red')+
+  annotate(geom = 'text', x = 9228, y = 22, label = 'AlaAt')+
+  annotate(geom = 'text', x = 10771, y = 18, label = 'MKK3')+
+  scale_x_continuous(label = c("1H","2H", "3H", "4H", "5H", "6H", "7H", "UN"),
+                     breaks = breaks)+
+  ylab('-log(p)')+xlab(NULL)+
+  geom_hline(yintercept = 4)+
+  ylim(0,30)+
+  theme_bw()+labs(title = 'All MTA, MAF>0.07') 
+
+DF_OperationsV2(PHS.MLMM.gwas$GWAS) %>% filter(maf >0.07) %>%
+  ggplot(aes(x = ordinal, y = log10PVal))+
+  geom_point(size =2.5) +
+  geom_vline(xintercept = ChromLines)+
+  geom_vline(xintercept = c(9228,10771), color = 'red')+
+  annotate(geom = 'text', x = 9228, y = 22, label = 'AlaAt')+
+  annotate(geom = 'text', x = 10771, y = 18, label = 'MKK3')+
+  scale_x_continuous(label = c("1H","2H", "3H", "4H", "5H", "6H", "7H", "UN"),
+                     breaks = breaks)+
+  ylab('-log(p)')+xlab(NULL)+
+  geom_hline(yintercept = 4)+
+  theme_bw()+labs(title = 'All MTA, MAF>0.07')
+  
 
 ##################Random Plots made for the presentation #######################################################################
-load('SMB_Data/PHS_BLUEs_GGS1920.RData')
-
 
 DH_blues %>% filter(TP == 'TP5' & Trait == 'GI' & Family !='Parent') %>% filter(taxa != 'Charles') %>% 
   ggplot()+geom_density(aes(x = BLUE)) +facet_wrap(facets = vars(Family)) +
