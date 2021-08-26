@@ -53,13 +53,13 @@ offspring_SLD_BV %>% ggplot(aes(x =BV)) +geom_histogram(bins = 6)+labs(title = '
 
 ###### MORE MARKERS! ######
 # So now lets extend things: 
-# A vector of 2's and 0's (fully inbred) is the same as a vector of 1's and 0's (just divide by 2) and is a little easier to think about.
+# A vector of 2's and 0's (fully inbred) is the same as a vector of 1's and -1's (just subtract 1) and is a little easier to think about.
 # Lets say now we have 200 loci, but now there are some sites the parents have in common 
 # (ie the sites are not segregating), and P2 no loger has only the negative allele. 
 numLoci = 200
 # Lets create parents with more loci
-P1 = c(sample(c(0,1), numLoci-1, replace = T,prob = c(0.5,0.5)),1)
-P2 = c(sample(c(0,1), numLoci-1, replace = T,prob = c(0.5,0.5)),0)
+P1 = c(sample(c(-1,1), numLoci-1, replace = T,prob = c(0.5,0.5)),1)
+P2 = c(sample(c(-1,1), numLoci-1, replace = T,prob = c(0.5,0.5)),-1)
 
 #put those parents into a matrix
 ParentMatrix = matrix(c(P1,P2), nrow = numLoci, ncol = 2)
@@ -72,7 +72,7 @@ for (row in 1:nrow(ParentMatrix)){
 }
 # which makes a matrix with the offsping in columns, and the loci in rows!
 # now let's use this matrix to examine offsping values: 
-# Let's assume equal effect sizes, 1 being positive and 0 being the negative. 
+# Let's assume equal effect sizes, 
 # That is for each offsping we are going to find the sum of the marker effects, assign that 
 # as the individuals breeding value and then plot them!
 # All loci have equal effects, so lets assing a vector of '1's as the effect size (this is that vector of a's that we saw on the slide)
@@ -85,16 +85,13 @@ Offspring_BV%>% ggplot(aes(x = BV))+geom_density()+geom_vline(xintercept = Paren
 
 # Now lets do the same thing, but include a Single Large Effect (SLE) locus at the end of the parnetal haplotypes that 
 # the parents are segregating for - see above where P1 and P2 are inititalized
-SLE_markerEffect = c(rep(1,numLoci-1),20)
+SLE_markerEffect = c(rep(1,numLoci-1),30)
 Parent_SLE_BV = data.frame(BV = t(t(SLE_markerEffect) %*% ParentMatrix))
 Offspring_SLE_BV = data.frame(BV = t(t(SLE_markerEffect) %*% offspring))
 
 Offspring_SLE_BV %>% ggplot(aes(x = BV))+geom_density()+geom_vline(xintercept = Parent_SLE_BV$BV) +
   geom_label(data = data.frame(y = c(0.05,0.05), x = Parent_SLE_BV$BV, label = c('P1','P2')),
              aes(x =x, y = y, label = label))
-
-
-
 
 # Now what happens when we assign a random effect size to all the markers (ie marker effects are not constant) 
 # in this the effects are drawn from a normal distribution with mean and sd of 1. 
@@ -110,7 +107,7 @@ Offspring_Randef_BV %>% ggplot(aes(x = BV))+geom_density()+geom_vline(xintercept
 
 ###  Back to the presenation! #####
 
-x = sample(c(1,0),100,replace = T)
+x = sample(c(1,-1),100,replace = T)
 y = rnorm(mean = x*6, sd=1, n = 100)
 data.frame(x = x,y=y) %>% ggplot(aes(x =x, y =y))+geom_point() +xlab('Marker Score')+
   ylab('Breeding Value') +geom_smooth(formula = y~x, se = F, method = lm)
@@ -121,7 +118,7 @@ data.frame(x = x,y=y) %>% ggplot(aes(x =x, y =y))+geom_point() +xlab('Marker Sco
 ############## Let use the random vs fixed effects models and see how they respond
 # Lets also write a function to give us the BV, marker matrix, and etc:
 GenerateBiparental = function(NumLoci, PopulationSize, MarkerEffects){
-  ParentMatrix = matrix(sample(c(0,1),NumLoci*2,replace = T), nrow = NumLoci, ncol = 2)
+  ParentMatrix = matrix(sample(c(-1,1),NumLoci*2,replace = T), nrow = NumLoci, ncol = 2)
   Offspring = matrix(NA, nrow = NumLoci, ncol = PopulationSize) 
   ExtraOffspring = matrix(NA, nrow = NumLoci, ncol = PopulationSize)#and make a matrix with that size.
   # We will populate the offspirng matrix with the offspring each locus at a time (as things are unlinked) using this 'for' loop:
@@ -188,6 +185,10 @@ cor(P4000_N500$ExtraOffspring_BV$BV,#TrueValues
 # Now what if we used a ridge regression process to regularize and make the predictors less sensitive?
 # rrblup is a good framework to work through 
 Ueffects = mixed.solve(y = P4000_N500$Offspring_BV$BV, Z = t(P4000_N500$Offspring))
+lambda = 0.8
+U_hat = P4000_N500$Offspring %*% solve((t(P4000_N500$Offspring)%*%P4000_N500$Offspring+diag(lambda,nrow = 400))) %*% P4000_N500$Offspring_BV$BV
+Ueffects$u%>%cbind(.,data.frame(u_hatemp= U_hat)) %>% 
+  ggplot(aes(x = .,y = u_hatemp)) +geom_point()
 #Now lets check to see if these marker effects along with the extra offspring simulated and there true breeding values are correlated
 cor(t(as.matrix(P4000_N500$ExtraOffspring)) %*% as.matrix(Ueffects$u),P4000_N500$ExtraOffspring_BV$BV)
  
@@ -195,6 +196,43 @@ cor(t(as.matrix(P4000_N500$ExtraOffspring)) %*% as.matrix(Ueffects$u),P4000_N500
 data.frame(Estimated = as.matrix(Ueffects$u), Known =P4000_N500$MarkerEffects) %>%
   ggplot(aes(x = Known, y = Estimated))+geom_point()+ #Markers that are monomorphic get estimate effect sizes of zero hence those at zero
   geom_abline(slope = 1, intercept = 0)
+
+# What are we forgetting? error of couse!
+GenerateBiparentalWithError = function(NumLoci, PopulationSize, MarkerEffects, ratioEtoG = 0){
+  ParentMatrix = matrix(sample(c(-1,1),NumLoci*2,replace = T), nrow = NumLoci, ncol = 2)
+  Offspring = matrix(NA, nrow = NumLoci, ncol = PopulationSize) 
+  ExtraOffspring = matrix(NA, nrow = NumLoci, ncol = PopulationSize)#and make a matrix with that size.
+  # We will populate the offspirng matrix with the offspring each locus at a time (as things are unlinked) using this 'for' loop:
+  for (row in 1:nrow(ParentMatrix)){
+    ithLocus = sample(c(ParentMatrix[row,]),PopulationSize, replace = T)
+    Offspring[row,] = ithLocus
+    ithLocus2 = sample(c(ParentMatrix[row,]),PopulationSize, replace = T)
+    ExtraOffspring[row,] = ithLocus2
+  }
+  Parent_BV = data.frame(BV = t(MarkerEffects %*% ParentMatrix)) #
+  Offspring_BV =  data.frame(BV = t(MarkerEffects %*% Offspring))
+  ExtraOffspring_BV =  data.frame(BV = t(MarkerEffects %*% ExtraOffspring))
+  VarE = var(Offspring_BV$BV)*ratioEtoG
+  errorBV = rnorm(PopulationSize, mean = 0, sd = sqrt(VarE))
+  errorBV_extra = rnorm(PopulationSize, mean = 0, sd = sqrt(VarE))
+  ExtraOffspring_BV = ExtraOffspring_BV %>% mutate(BV_plusError = BV+data.frame(errorBV_extra))
+  Offspring_BV = Offspring_BV %>% mutate(BV_plusError = BV+errorBV_extra)
+  
+  Plot = Offspring_BV %>% ggplot(aes(x = BV_plusError))+geom_density()+geom_vline(xintercept = Parent_BV$BV) +
+    geom_label(data = data.frame(y = c(0.05,0.05), x = Parent_BV$BV, label = c('P1','P2')),
+               aes(x =x, y = y, label = label))
+  
+  
+  return(list(ParentMatrix =ParentMatrix,
+              Parent_BV = Parent_BV,
+              Offspring_BV = Offspring_BV,
+              MarkerEffects = MarkerEffects,
+              Offspring = Offspring,
+              Plot = Plot,
+              ExtraOffspring = ExtraOffspring,
+              ExtraOffspring_BV = ExtraOffspring_BV))
+  
+}
 
 
 
