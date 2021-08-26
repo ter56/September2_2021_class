@@ -505,10 +505,3 @@ all_BLUE %>% select(!c(GE5,GI5scale)) %>% rename(GI3 = GI3scale) %>%
   ggplot(aes(value))+facet_wrap(facets = vars(facet), scales = 'free', nrow = 2) +geom_density() +
   theme_bw()
 
-
-# This is a test
-
-#for louis 
-
-# For David 
-
