@@ -15,7 +15,7 @@ library(rrBLUP)
 # If you have this as a project from git then run this line:
 setwd(rprojroot::find_rstudio_root_file())
 # If not :
-setwd('your/directory/of/choice')
+setwd('your/directory/of/choice/September2_2021/')
 
 # Let's start with the example we saw in the slides: 5 loci, equal effect sizes.
 P1_sl = rep(2,5) #P1 haplotype always carrying the 2
@@ -170,7 +170,9 @@ Random_MarkerEffect %>% cbind(data.frame(randeffect.lm$coefficients)[-1,]) %>% c
 # that we are estimating. ie N > P by 5x which looks like enough to estimate our slopes well!
 
 #now lets get more realistic
-P1000_N400 = GenerateBiparental(NumLoci = 1000,PopulationSize = 400, MarkerEffects = rnorm(1000,mean = 0, sd = 1))
+P1000_N400 = GenerateBiparental(NumLoci = 1000,
+                                PopulationSize = 400, 
+                                MarkerEffects = rnorm(1000,mean = 0, sd = 1))
 P1000_N400$Plot
 P1k_N400.lm = t(P1000_N400$Offspring) %>% data.frame() %>%cbind(., P1000_N400$Offspring_BV) %>%
   lm(BV~.,data = .)
@@ -179,7 +181,7 @@ P1000_N400$MarkerEffects %>% cbind(data.frame(P1k_N400.lm$coefficients)[-1,]) %>
 
 MarkerCoef1k_n400= as.data.frame(P1k_N400.lm$coefficients) #let's get out the coef
 MarkerCoef1k_n400[is.na(MarkerCoef1k_n400)] <- 0 #replace nas with 0s so that things can be calcuated  - notice there are 499 of them 
-cor(P1000_N400$ExtraOffspring_BV$BV,#TrueValues
+cor(P1000_N400$ExtraOffspring_BV$BV,#True Values
     t(matrix(MarkerCoef1k_n400$`P1k_N400.lm$coefficients`)[-1,]  %*% P1000_N400$ExtraOffspring))#What we calcuate
 # Low correlation between the marker effects leads to low correlation between the estimated breeding values of the extra offspring and the real 
 # breeding values
@@ -187,22 +189,25 @@ cor(P1000_N400$ExtraOffspring_BV$BV,#TrueValues
 # Now what if we used a ridge regression process to regularize and make the predictors less sensitive?
 # rrblup is a good framework to work through 
 Ueffects = rrBLUP::mixed.solve(y = P1000_N400$Offspring_BV$BV, Z = t(P1000_N400$Offspring))
+
 Ueffects$Vu #sigma2mu of markers
 Ueffects$Ve #sigma2e of error - remember there was no error added to these offspring - we are inputting the 'true' breeding values under the model
 lambda = Ueffects$Ve/Ueffects$Vu #sigmaE/sigmaU
 U_hat = P1000_N400$Offspring %*% solve((t(P1000_N400$Offspring)%*%P1000_N400$Offspring+diag(lambda,nrow = 400))) %*% P1000_N400$Offspring_BV$BV
 Ueffects$u%>%cbind(.,data.frame(u_hatemp= U_hat)) %>% 
   ggplot(aes(x = .,y = u_hatemp)) +geom_point()
-#Now lets check to see if these marker effects along with the extra offspring simulated and there true breeding values are correlated
+# Now lets check to see if these marker effects along with the extra offspring simulated and 
+# there true breeding values are correlated
 cor(t(as.matrix(P1000_N400$ExtraOffspring)) %*% as.matrix(Ueffects$u),P1000_N400$ExtraOffspring_BV$BV)
- 
+plot(t(as.matrix(P1000_N400$ExtraOffspring)) %*% as.matrix(Ueffects$u),P1000_N400$ExtraOffspring_BV$BV)
+
 # Lets look at the Markers now and the estimated vs actual effects:
-data.frame(Estimated = as.matrix(Ueffects$u), Known =P1000_N400$MarkerEffects) %>%
+data.frame(Estimated = as.matrix(Ueffects$u), Known = P1000_N400$MarkerEffects) %>%
   ggplot(aes(x = Known, y = Estimated))+geom_point()+ #Markers that are monomorphic get estimate effect sizes of zero hence those at zero
   geom_abline(slope = 1, intercept = 0)
 
 # What are we forgetting? error of couse! #######
-# Lets create a biparnetal generator function with error added in. 
+# Lets create a biparental generator function with error added in. 
 # in this case we will input the heritability (ratioEtoTotalG) and get out error with a corresponding magnitude.
 GenerateBiparentalWithError = function(NumLoci, PopulationSize, MarkerEffects, ratioEtoTotalG = 0){
   # ratioEtoTotalG is the hertiability of this trait essentially - sum of marker variance. 
@@ -221,11 +226,11 @@ GenerateBiparentalWithError = function(NumLoci, PopulationSize, MarkerEffects, r
   Parent_BV = data.frame(BV = t(MarkerEffects %*% ParentMatrix)) #
   Offspring_BV =  data.frame(BV = t(MarkerEffects %*% Offspring))
   ExtraOffspring_BV =  data.frame(BV = t(MarkerEffects %*% ExtraOffspring))
-  VarE = var(Offspring_BV$BV)*ratioEtoG
+  VarE = var(Offspring_BV$BV)*ratioEtoTotalG
   errorBV = rnorm(PopulationSize, mean = 0, sd = sqrt(VarE))
   errorBV_extra = rnorm(PopulationSize, mean = 0, sd = sqrt(VarE))
   ExtraOffspring_BV = ExtraOffspring_BV %>% mutate(BV_plusError = BV+data.frame(errorBV_extra))
-  Offspring_BV = Offspring_BV %>% mutate(BV_plusError = BV+errorBV_extra)
+  Offspring_BV = Offspring_BV %>% mutate(BV_plusError = BV+errorBV)
   
   Plot = Offspring_BV %>% ggplot(aes(x = BV_plusError))+geom_density()+geom_vline(xintercept = Parent_BV$BV) +
     geom_label(data = data.frame(y = c(0.05,0.05), x = Parent_BV$BV, label = c('P1','P2')),
@@ -243,22 +248,30 @@ GenerateBiparentalWithError = function(NumLoci, PopulationSize, MarkerEffects, r
   
 }
 
-P1000_N400_L1 = GenerateBiparentalWithError(NumLoci = 1000, PopulationSize = 400,MarkerEffects = rnorm(1000,mean = 0, sd = 1),ratioEtoG = 1)
+P1000_N400_L1 = GenerateBiparentalWithError(NumLoci = 1000, 
+                                            PopulationSize = 400,
+                                            MarkerEffects = rnorm(1000,mean = 0, sd = 1),
+                                            ratioEtoTotalG = 1)
 polymorphs = P1000_N400_L1$ParentMatrix %>% data.frame() %>% mutate(polymorphic = ifelse(X1==X2, 0,1))%>%select(polymorphic) %>%sum()
 
 UeffectsE = mixed.solve(y = P1000_N400_L1$Offspring_BV$BV_plusError, Z = t(P1000_N400_L1$Offspring))
-UeffectsE$Vu #This is the variance of the single loci, sum of all loci's variance (have to be polymorhpic) will give Vg
+UeffectsE$Vu #This is the variance of the single loci, sum of all loci's variance (have to be polymorhpic) 
+             #will give Vg
 UeffectsE$Ve #in this case the Vg == Ve which is a heritability of 0.5
+estimatedRatioEtoTotalG = UeffectsE$Ve/(UeffectsE$Vu*polymorphs)
+
 lambdaE = UeffectsE$Ve/(UeffectsE$Vu) #sigmaE/sigmaU
-U_hat = P1000_N400_L1$Offspring %*% solve((t(P1000_N400_L1$Offspring)%*%P1000_N400_L1$Offspring+diag(lambda,nrow = 400))) %*% P1000_N400_L1$Offspring_BV$BV_plusError
+
+U_hat = P1000_N400_L1$Offspring %*% solve((t(P1000_N400_L1$Offspring)%*%P1000_N400_L1$Offspring+diag(lambdaE,nrow = 400))) %*% P1000_N400_L1$Offspring_BV$BV_plusError
 UeffectsE$u%>%cbind(.,data.frame(u_hatemp= U_hat)) %>% 
   ggplot(aes(x = .,y = u_hatemp)) +geom_point()
 #lambda is estimated from the data by an algorithmic process
 
-#Now lets check to see if these marker effects along with the extra offspring simulated and there true breeding values are correlated
+#Now lets check to see if these marker effects along with the extra offspring simulated and thier true breeding values are correlated
 cor(t(as.matrix(P1000_N400_L1$ExtraOffspring)) %*% as.matrix(UeffectsE$u), P1000_N400_L1$ExtraOffspring_BV$BV)
+#correlation between the predicted offsping values and the actual.
 cor(t(as.matrix(P1000_N400_L1$ExtraOffspring)) %*% as.matrix(UeffectsE$u), P1000_N400_L1$ExtraOffspring_BV$BV_plusError)
-
+#correlation between the predicted offsping values and the actual + the error. 
 
 # Lets look at the Markers now and the estimated vs actual effects:
 data.frame(Estimated = as.matrix(UeffectsE$u), Known =P1000_N400_L1$MarkerEffects) %>%
@@ -395,7 +408,7 @@ y_test = Phenotype[testingSet]
 marker_train = myGD[trainingSet,]
 marker_test = myGD[testingSet,]
 
-trained.Model = mixed.solve(y_train, Z = marker_train, K = NULL, SE =FALSE)
+trained.Model = mixed.solve(y = y_train, Z = marker_train, K = NULL, SE =FALSE)
 trained.Model$Vu
 trained.Model$Ve
 trained.Model$Vu*8385/(trained.Model$Vu*8385+trained.Model$Ve)
